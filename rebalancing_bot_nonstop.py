@@ -6,7 +6,7 @@ import math
 from datetime import datetime
 
 class RoostooRebalancingBot:
-    def __init__(self, api_key, secret_key, initial_capital=10000, threshold=0.01):
+    def __init__(self, api_key, secret_key, initial_capital=10000, threshold=0.005):
         self.base_url = "https://mock-api.roostoo.com"
         self.api_key = api_key
         self.secret_key = secret_key
@@ -643,7 +643,7 @@ if __name__ == "__main__":
         api_key=API_KEY,
         secret_key=SECRET_KEY,
         initial_capital=50000,  # Adjust based on your actual starting capital
-        threshold=0.02          # 2% rebalancing threshold
+        threshold=0.005          # 0.5% rebalancing threshold
     )
     
     # ============================================
