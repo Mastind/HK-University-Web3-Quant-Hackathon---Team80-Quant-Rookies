@@ -6,7 +6,7 @@ import math
 from datetime import datetime
 
 class RoostooRebalancingBot:
-    def __init__(self, api_key, secret_key, initial_capital=10000, threshold=0.05):
+    def __init__(self, api_key, secret_key, initial_capital=10000, threshold=0.01):
         self.base_url = "https://mock-api.roostoo.com"
         self.api_key = api_key
         self.secret_key = secret_key
