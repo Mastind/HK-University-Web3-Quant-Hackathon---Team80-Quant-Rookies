@@ -635,8 +635,8 @@ from datetime import timedelta
 # Run the bot
 if __name__ == "__main__":
     # IMPORTANT: Replace with your actual Roostoo API credentials
-    API_KEY = "YOUR_API_KEY_HERE"
-    SECRET_KEY = "YOUR_SECRET_KEY_HERE"
+    API_KEY = "olDFYeqSIQgk5phJgY4lWKNNaGpJiWnnecDeIWitZLV23DtnP15lGJJbKi1BsOPD"
+    SECRET_KEY = "Azfl3pdnzckPEYVR3pHJf3CzPtESK3bjkOUKlwqZZOlEThheiqqlZNlPTPg1sRYM"
     
     # Create the bot
     bot = RoostooRebalancingBot(
