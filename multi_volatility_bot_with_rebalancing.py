@@ -670,7 +670,7 @@ class PortfolioRebalancer:
             return True
         
         hours_since_rebalance = (datetime.now() - self.last_rebalance).total_seconds() / 3600
-        return hours_since_rebalance >= 1  # Rebalance at most every 1 hours
+        return hours_since_rebalance >= 4  # Rebalance at most every 4 hours
                         
 # =============================================================================
 # VOLATILITY STRATEGY
