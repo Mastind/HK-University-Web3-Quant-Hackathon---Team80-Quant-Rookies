@@ -67,7 +67,7 @@ cd HK-University-Web3-Quant-Hackathon---Team80-Quant-Rookies
 
 2. **Install Dependencies**
 ```bash
-pip install pandas numpy requests arch
+pip install pandas numpy requests statsmodels scipy arch
 ```
 
 3. **Configure Trading Parameters**
