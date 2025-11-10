@@ -26,8 +26,8 @@ class RoostooAPI:
     
     def __init__(self, symbol='BTC/USD'):
         self.BASE_URL = "https://mock-api.roostoo.com"
-        self.API_KEY = "olDFYeqSIQgk5phJgY4lWKNNaGpJiWnnecDeIWitZLV23DtnP15lGJJbKi1BsOPD"
-        self.SECRET_KEY = "Azfl3pdnzckPEYVR3pHJf3CzPtESK3bjkOUKlwqZZOlEThheiqqlZNlPTPg1sRYM"
+        self.API_KEY = "tR9eY2uIpO7aS4dFgH1jK6lZxC3vB0nMqW8eR5tYuI2oP7aSdF4gH1jK6lZxC3vB"
+        self.SECRET_KEY = "G9hJ1kL3zXcV5bN7mQwE0rT2yUiP4oA6sDdF8gJ0hKlZ2xC4vBnM6qW8eRtY"
         
         self.symbol = symbol
         self.base_currency = symbol.split('/')[0]
