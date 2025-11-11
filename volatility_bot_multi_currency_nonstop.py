@@ -285,6 +285,11 @@ class VolatilityStrategy:
         
         for i in range(50, len(df)):
             row = df.iloc[i]
+
+            if row['returns'] > 0.02 or row['returns'] < -0.01: #take-profit or stop-loss
+                df.loc[df.index[i], 'signal'] = 0
+                df.loc[df.index[i], 'confidence'] = 1
+                continue
             
             if row['volatility'] < vol_threshold:
                 continue
