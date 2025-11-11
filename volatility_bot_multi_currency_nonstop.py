@@ -147,7 +147,10 @@ class HorusDataFetcher:
         self.symbol_map = {
             'BTCUSDT': 'BTC',
             'ETHUSDT': 'ETH',
-            'SOLUSDT': 'SOL'
+            'SOLUSDT': 'SOL',
+            'BNBUSDT': 'BNB',
+            'XRPUSDT': 'XRP',
+            'ADAUSDT': 'ADA'
         }
         
         self.interval_map = {
