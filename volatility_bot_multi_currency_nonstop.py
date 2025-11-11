@@ -412,7 +412,7 @@ class AutoTradingBot:
             'rsi_overbought': 60,
             'min_momentum': 0.001,
             'position_size_pct': 0.60,  # Reduced to 60% for safety
-            'max_position_usd': 30000,   # Maximum $30000 per trade
+            'max_position_usd': 20000,   # Maximum $20000 per trade
             'min_position_usd': 50
         }
         
