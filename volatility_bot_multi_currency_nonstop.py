@@ -526,20 +526,29 @@ class AutoTradingBot:
         """Check if take-profit or stop-loss conditions are met based on last buy order"""
         last_buy_order = self.get_last_buy_order(crypto)
         
+        balance = self.roostoo_apis[crypto].get_balance()
+        if not balance or not balance.get('Success'):
+            print(f"❌ {crypto}: Could not fetch balance")
+            return False
+        
+        wallet = balance.get('SpotWallet', {})
+        crypto_balance = wallet.get(crypto, {}).get('Free', 0)
+        
         if not last_buy_order or last_buy_order['price'] <= 0:
             return None
         
         last_buy_price = last_buy_order['price']
         
-        # Take profit: current price >= 1.02 * last buy price
-        if current_price >= last_buy_price * (1 + self.config['take_profit_pct']):
+        # Take profit: current price >= 1.02 * last buy price && crypto_balance > 0
+        if current_price >= last_buy_price * (1 + self.config['take_profit_pct']) and crypto_balance > 0:
             return 'TAKE_PROFIT'
         
-        # Stop loss: current price <= 0.99 * last buy price  
-        if current_price <= last_buy_price * (1 - self.config['stop_loss_pct']):
+        # Stop loss: current price <= 0.99 * last buy price  && crypto_balance > 0
+        if current_price <= last_buy_price * (1 - self.config['stop_loss_pct']) and crypto_balance > 0:
             return 'STOP_LOSS'
         
         return None
+
     
     def check_buy_cooldown(self, crypto):
         """Check if enough time has passed since last buy for this currency"""
