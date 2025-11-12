@@ -595,8 +595,8 @@ class AutoTradingBot:
             analysis = {
                 'crypto': crypto,
                 'df': df_with_signals,
-                'signal': signal,
-                'confidence': confidence,
+                'signal': latest_row['signal'],
+                'confidence': latest_row['confidence'],
                 'price': roostoo_price,
                 'volatility': latest_row['volatility'],
                 'rsi': latest_row['rsi'],
@@ -655,14 +655,7 @@ class AutoTradingBot:
             
             quantity = position_usd / price
             side = 'BUY'
-            
-            # Different reasons for different signal types
-            if tp_sl_signal == 'STOP_LOSS':
-                last_buy_order = self.get_last_buy_order(crypto)
-                last_price = last_buy_order['price'] if last_buy_order else 0
-                reason = f"Stop-loss triggered (Last Buy: ${last_price:.2f}, Current: ${price:.2f})"
-            else:
-                reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
+            reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
             
         else:  # SELL or forced sell 
             crypto_balance = wallet.get(crypto, {}).get('Free', 0)
