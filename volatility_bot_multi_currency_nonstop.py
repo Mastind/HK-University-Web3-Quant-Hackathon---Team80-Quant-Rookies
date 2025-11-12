@@ -133,6 +133,32 @@ class RoostooAPI:
         except:
             return None
 
+    def query_order(self, pair=None, limit=10):
+        """Query order history for a specific pair"""
+        url = f"{self.BASE_URL}/v3/query_order"
+        
+        payload = {
+            'limit': limit
+        }
+        if pair:
+            payload['pair'] = pair
+
+        headers, signed_payload, total_params = self._get_signed_headers(payload)
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        
+        try:
+            res = requests.post(url, headers=headers, data=total_params)
+            res.raise_for_status()
+            orders = res.json()
+            if orders.get("Success") and "OrderMatched" in orders:
+                return orders["OrderMatched"]
+            else:
+                return []
+        
+        except Exception as e:
+            print(f"❌ Error querying orders for {pair}: {e}")
+            return []
+
 # =============================================================================
 # HORUS API DATA FETCHER
 # =============================================================================
@@ -154,7 +180,7 @@ class HorusDataFetcher:
         }
         
         self.interval_map = {
-            '1m': '1d', '3m': '1d', '5m': '1d',
+            '1m': '15m', '3m': '15m', '5m': '15m',
             '15m': '15m', '30m': '1h', '1h': '1h',
             '2h': '1h', '4h': '1h', '1d': '1d'
         }
@@ -288,12 +314,7 @@ class VolatilityStrategy:
         
         for i in range(50, len(df)):
             row = df.iloc[i]
-
-            if row['returns'] > 0.02 or row['returns'] < -0.01: #take-profit or stop-loss
-                df.loc[df.index[i], 'signal'] = 0
-                df.loc[df.index[i], 'confidence'] = 1
-                continue
-            
+                        
             if row['volatility'] < vol_threshold:
                 continue
             
@@ -349,9 +370,8 @@ class TradeLogger:
     def log_cycle(self, cycle_num, analyses):
         print(f"\n📊 Cycle #{cycle_num} Summary:")
         for crypto, analysis in analyses.items():
-            if hasattr(analysis, 'signal'):
-                signal_text = "BUY" if analysis.signal == 1 else "SELL" if analysis.signal == 0 else "HOLD"
-                print(f"   {crypto}: {signal_text} (confidence: {analysis.confidence:.0%})")
+            signal_text = "BUY" if analysis.get('signal') == 1 else "SELL" if analysis.get('signal') == 0 else "HOLD"
+            print(f"   {crypto}: {signal_text} (confidence: {analysis.get('confidence', 0):.0%})")
     
     def get_summary(self):
         if not self.trades:
@@ -412,8 +432,10 @@ class AutoTradingBot:
             'rsi_overbought': 60,
             'min_momentum': 0.001,
             'position_size_pct': 0.60,  # Reduced to 60% for safety
-            'max_position_usd': 20000,   # Maximum $20000 per trade
-            'min_position_usd': 50
+            'max_position_usd': 10000,   # Maximum $10000 per trade
+            'min_position_usd': 50,
+            'take_profit_pct': 0.02,    # 2% take profit
+            'stop_loss_pct': 0.01       # 1% stop loss
         }
         
         self.roostoo_apis = {
@@ -427,6 +449,10 @@ class AutoTradingBot:
         self.logger = TradeLogger()
         self.last_model_rebuild = None
         self.cycle_count = 0
+        
+        # Track last buy times for cooldown
+        self.last_buy_times = {}   # {crypto: datetime}
+        self.buy_cooldown_minutes = 10  # 10-minute gap between buy signals
         
         # Build initial models
         self.rebuild_models()
@@ -457,6 +483,71 @@ class AutoTradingBot:
         
         hours_since_rebuild = (datetime.now() - self.last_model_rebuild).total_seconds() / 3600
         return hours_since_rebuild >= 24
+    
+    def get_last_buy_order(self, crypto):
+        """Get the last buy order for a cryptocurrency from Roostoo API"""
+        try:
+            # Query order history for this crypto pair
+            orders = self.roostoo_apis[crypto].query_order(pair=f"{crypto}/USD", limit=20)
+            
+            if not orders:
+                return None
+            
+            # Find the latest filled BUY order
+            for order in orders:
+                if (order["Side"] == 'BUY' and 
+                    order["Status"] == 'FILLED' and
+                    order["FilledQuantity"] and 
+                    float(order["FilledQuantity"] > 0)):
+                    
+                    # Calculate average filled price
+                    avg_price = order["Price"]
+                    
+                    # Parse order time
+                    order_time_str = order["FinishTimestamp"]
+                    
+                    last_order = {
+                        'price': order["Price"],
+                        'quantity': float(order['FilledQuantity']),
+                        'order_id': order['OrderID'],
+                        'timestamp': order["FinishTimestamp"]
+                    }
+                    
+                    return last_order
+            
+            # No buy orders found
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error getting last buy order for {crypto}: {e}")
+            return None
+    
+    def check_take_profit_stop_loss(self, crypto, current_price):
+        """Check if take-profit or stop-loss conditions are met based on last buy order"""
+        last_buy_order = self.get_last_buy_order(crypto)
+        
+        if not last_buy_order or last_buy_order['price'] <= 0:
+            return None
+        
+        last_buy_price = last_buy_order['price']
+        
+        # Take profit: current price >= 1.02 * last buy price
+        if current_price >= last_buy_price * (1 + self.config['take_profit_pct']):
+            return 'TAKE_PROFIT'
+        
+        # Stop loss: current price <= 0.99 * last buy price  
+        if current_price <= last_buy_price * (1 - self.config['stop_loss_pct']):
+            return 'STOP_LOSS'
+        
+        return None
+    
+    def check_buy_cooldown(self, crypto):
+        """Check if enough time has passed since last buy for this currency"""
+        if crypto not in self.last_buy_times:
+            return True  # No previous buy, so no cooldown needed
+        
+        time_since_last_buy = datetime.now() - self.last_buy_times[crypto]
+        return time_since_last_buy.total_seconds() >= (self.buy_cooldown_minutes * 60)
     
     def analyze_crypto(self, crypto):
         """Analyze a single cryptocurrency"""
@@ -490,15 +581,27 @@ class AutoTradingBot:
             ticker = self.roostoo_apis[crypto].get_ticker(f"{crypto}/USD")
             roostoo_price = float(ticker['LastPrice']) if ticker and 'LastPrice' in ticker else latest_row['Close']
             
+            # Check take-profit/stop-loss conditions using last buy order
+            tp_sl_signal = self.check_take_profit_stop_loss(crypto, roostoo_price)
+            
+            # Apply buy cooldown for volatility signals
+            signal = latest_row['signal']
+            confidence = latest_row['confidence']
+            
+            if signal == 1 and not self.check_buy_cooldown(crypto):
+                signal = -1  # Override buy signal due to cooldown
+                confidence = 0.0
+            
             analysis = {
                 'crypto': crypto,
                 'df': df_with_signals,
-                'signal': latest_row['signal'],
-                'confidence': latest_row['confidence'],
+                'signal': signal,
+                'confidence': confidence,
                 'price': roostoo_price,
                 'volatility': latest_row['volatility'],
                 'rsi': latest_row['rsi'],
-                'returns': latest_row['returns']
+                'returns': latest_row['returns'],
+                'tp_sl_signal': tp_sl_signal  # Include TP/SL signal
             }
             
             return analysis
@@ -513,12 +616,13 @@ class AutoTradingBot:
         signal = analysis['signal']
         confidence = analysis['confidence']
         price = analysis['price']
+        tp_sl_signal = analysis.get('tp_sl_signal')  # Get TP/SL signal
         
         # Check if we should trade
-        if signal == -1:
+        if signal == -1 and tp_sl_signal is None:
             return False
         
-        if confidence < self.min_confidence:
+        if confidence < self.min_confidence and tp_sl_signal is None:
             print(f"⏸️  {crypto}: Confidence {confidence:.0%} < minimum {self.min_confidence:.0%}, skipping trade")
             return False
         
@@ -531,7 +635,7 @@ class AutoTradingBot:
         wallet = balance.get('SpotWallet', {})
         
         # Calculate position size
-        if signal == 1:  # BUY
+        if signal == 1 and tp_sl_signal is None:  # BUY
             usd_balance = wallet.get('USD', {}).get('Free', 0)
             
             if usd_balance <= 0:
@@ -551,9 +655,16 @@ class AutoTradingBot:
             
             quantity = position_usd / price
             side = 'BUY'
-            reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
             
-        else:  # SELL
+            # Different reasons for different signal types
+            if tp_sl_signal == 'STOP_LOSS':
+                last_buy_order = self.get_last_buy_order(crypto)
+                last_price = last_buy_order['price'] if last_buy_order else 0
+                reason = f"Stop-loss triggered (Last Buy: ${last_price:.2f}, Current: ${price:.2f})"
+            else:
+                reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
+            
+        else:  # SELL or forced sell 
             crypto_balance = wallet.get(crypto, {}).get('Free', 0)
             
             if crypto_balance <= 0:
@@ -563,13 +674,27 @@ class AutoTradingBot:
             # Sell a portion
             quantity = crypto_balance * self.config['position_size_pct']
             side = 'SELL'
-            reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
+            
+            # Different reasons for different signal types
+            if tp_sl_signal == 'TAKE_PROFIT':
+                last_buy_order = self.get_last_buy_order(crypto)
+                last_price = last_buy_order['price'] if last_buy_order else 0
+                reason = f"Take-profit triggered (Last Buy: ${last_price:.2f}, Current: ${price:.2f})"
+            elif tp_sl_signal == 'STOP_LOSS':
+                last_buy_order = self.get_last_buy_order(crypto)
+                last_price = last_buy_order['price'] if last_buy_order else 0
+                reason = f"Stop-loss triggered (Last Buy: ${last_price:.2f}, Current: ${price:.2f})"
+            else:
+                reason = f"Volatility signal (RSI: {analysis['rsi']:.1f}, Vol: {analysis['volatility']:.4f})"
         
         # Execute order
         print(f"\n💸 Executing {side} order for {crypto}...")
         print(f"   Quantity: {quantity:.6f}")
         print(f"   Price: ${price:,.2f}")
-        print(f"   Confidence: {confidence:.0%}")
+        if tp_sl_signal:
+            print(f"   Signal: {tp_sl_signal}")
+        else:
+            print(f"   Confidence: {confidence:.0%}")
         
         order = self.roostoo_apis[crypto].place_order(
             side=side,
@@ -579,11 +704,17 @@ class AutoTradingBot:
         
         if order and order.get('Success'):
             order_detail = order.get('OrderDetail', {})
+            filled_price = order_detail.get('FilledAverPrice', price)
+            
+            # Update last buy times for cooldown
+            if side == 'BUY':
+                self.last_buy_times[crypto] = datetime.now()
+            
             self.logger.log_trade(
                 crypto=crypto,
                 action=side,
                 quantity=order_detail.get('FilledQuantity', quantity),
-                price=order_detail.get('FilledAverPrice', price),
+                price=filled_price,
                 reason=reason,
                 order_id=order_detail.get('OrderID'),
                 success=True
@@ -608,6 +739,17 @@ class AutoTradingBot:
         print(f"🔄 CYCLE #{self.cycle_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("="*80)
         
+        # Display current positions based on last buy orders
+        print("\n💰 Current Positions:")
+        for crypto in self.cryptos:
+            last_buy_order = self.get_last_buy_order(crypto)
+            if last_buy_order:
+                current_ticker = self.roostoo_apis[crypto].get_ticker(f"{crypto}/USD")
+                current_price = float(current_ticker['LastPrice']) if current_ticker and 'LastPrice' in current_ticker else 0
+                buy_price = last_buy_order['price']
+                pnl_pct = ((current_price - buy_price) / buy_price) * 100
+                print(f"   {crypto}: Buy @ ${buy_price:.2f}, Current @ ${current_price:.2f} ({pnl_pct:+.2f}%)")
+        
         # Check if we need to rebuild models
         if self.should_rebuild_models():
             self.rebuild_models()
@@ -620,9 +762,23 @@ class AutoTradingBot:
             if analysis:
                 analyses[crypto] = analysis
                 
+                # Enhanced signal display with TP/SL and cooldown info
                 signal_text = "BUY 🟢" if analysis['signal'] == 1 else "SELL 🔴" if analysis['signal'] == 0 else "HOLD ➖"
+                
+                if analysis.get('tp_sl_signal'):
+                    signal_text = f"{analysis['tp_sl_signal']} 🚨"
+                elif analysis['signal'] == 1 and not self.check_buy_cooldown(crypto):
+                    time_left = (self.last_buy_times[crypto] + timedelta(minutes=self.buy_cooldown_minutes) - datetime.now())
+                    minutes_left = max(0, int(time_left.total_seconds() / 60))
+                    signal_text = f"COOLDOWN ⏳ ({minutes_left}m left)"
+                
                 print(f"   Signal: {signal_text}")
-                print(f"   Confidence: {analysis['confidence']:.0%}")
+                if analysis.get('tp_sl_signal'):
+                    last_buy_order = self.get_last_buy_order(crypto)
+                    last_price = last_buy_order['price'] if last_buy_order else 0
+                    print(f"   Last Buy: ${last_price:.2f}, Current: ${analysis['price']:.2f}")
+                else:
+                    print(f"   Confidence: {analysis['confidence']:.0%}")
                 print(f"   Price: ${analysis['price']:,.2f}")
                 print(f"   RSI: {analysis['rsi']:.1f}")
                 print(f"   Volatility: {analysis['volatility']:.4f}")
@@ -631,7 +787,13 @@ class AutoTradingBot:
         if self.auto_trade:
             print(f"\n💼 Auto-trading enabled - executing trades...")
             for crypto, analysis in analyses.items():
-                if analysis['signal'] != -1 and analysis['confidence'] >= self.min_confidence:
+                # Execute trades for TP/SL signals OR volatility signals with sufficient confidence
+                should_trade = (
+                    analysis.get('tp_sl_signal') is not None or 
+                    (analysis['signal'] != -1 and analysis['confidence'] >= self.min_confidence)
+                )
+                
+                if should_trade:
                     self.execute_trade(analysis)
                     time.sleep(2)  # Small delay between trades
         else:
@@ -658,6 +820,9 @@ class AutoTradingBot:
         print(f"   Min Confidence: {self.min_confidence:.0%}")
         print(f"   Position Size: {self.config['position_size_pct']:.0%} of balance")
         print(f"   Max Position: ${self.config['max_position_usd']:,.0f}")
+        print(f"   Take Profit: +{self.config['take_profit_pct']*100:.1f}%")
+        print(f"   Stop Loss: -{self.config['stop_loss_pct']*100:.1f}%")
+        print(f"   Buy Cooldown: {self.buy_cooldown_minutes} minutes")
         print(f"   Model Rebuild: Every 24 hours")
         print("\n⚠️  Press Ctrl+C to stop\n")
         print("="*80)
@@ -706,6 +871,9 @@ def main():
     print("\nFeatures:")
     print("  • Analyzes BTC, ETH, SOL every 5 minutes")
     print("  • Automatically executes trades based on GARCH volatility signals")
+    print("  • Take-profit at +2%, Stop-loss at -1% based on last order price")
+    print("  • 10-minute cooldown between buy signals for same currency")
+    print("  • Uses Roostoo API to query actual order history")
     print("  • Rebuilds models daily for optimal performance")
     print("  • Comprehensive trade logging and monitoring")
     print("="*80)
@@ -748,6 +916,9 @@ def main():
     print(f"Auto-trading: {'ENABLED ✅' if auto_trade else 'DISABLED ⏸️ (Recommendations only)'}")
     print(f"Min Confidence: {min_confidence:.0%}")
     print(f"Cycle Interval: {cycle_minutes} minutes")
+    print(f"Take Profit: +2.0%")
+    print(f"Stop Loss: -1.0%")
+    print(f"Buy Cooldown: 10 minutes")
     print("="*80)
     
     if auto_trade:
