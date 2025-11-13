@@ -38,8 +38,9 @@ pip install pandas numpy requests arch scipy statsmodels
 ### Configuration
 Run the bot and configure through the interactive setup:
 ```bash
-python volbotupdated_copy.py
+python volatility_bot_multi_currency_nonstop.py
 ```
+Don't forget to use your own API for roostoo and horus!
 
 You'll be prompted for:
 - **Auto-trading**: Enable/disable actual trade execution
