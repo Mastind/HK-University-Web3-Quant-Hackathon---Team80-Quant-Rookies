@@ -433,7 +433,7 @@ class AutoTradingBot:
             'min_momentum': 0.001,
             'position_size_pct': 0.60,  # Reduced to 60% for safety
             'max_position_usd': 10000,   # Maximum $10000 per trade
-            'min_position_usd': 50,
+            'min_position_usd': 0,
             'take_profit_pct': 0.02,    # 2% take profit
             'stop_loss_pct': 0.01       # 1% stop loss
         }
@@ -675,6 +675,8 @@ class AutoTradingBot:
             
             # Sell a portion
             quantity = crypto_balance * self.config['position_size_pct']
+            if ((crypto_balance - quantity) * price <= 1):
+                quantity = crypto_balance
             side = 'SELL'
             
             # Different reasons for different signal types
